@@ -31,6 +31,9 @@ func roomInfoHandler(app *tview.Application, roomInfoView *tview.TextView, rankU
 		}
 		strings.TrimRight(rankUserStr, "\n")
 		rankUsersView.SetText(rankUserStr)
+		// 滚动到顶部 避免过长显示下半部分
+		roomInfoView.ScrollToBeginning()
+		rankUsersView.ScrollToBeginning()
 		app.Draw()
 	}
 }
