@@ -3,7 +3,7 @@ package main
 import (
 	"bili/getter"
 	"bili/sender"
-	"bili/ui"
+	"bili/teaui"
 	"flag"
 	"fmt"
 	"strings"
@@ -12,27 +12,33 @@ import (
 	bg "github.com/iyear/biligo"
 )
 
+// 这里修改一下
+// 使用扫码登陆
+// roomID 可以手动输入，并且可以随时修改
+
 type Config struct {
 	Cookie string
-	RoomId int64
+	RoomID int64
 }
 
-var config Config
-var auth bg.CookieAuth
+var (
+	config Config
+	auth   bg.CookieAuth
+)
 
 func init() {
 	configFile := ""
-	roomId := int64(0)
+	roomID := int64(0)
 	flag.StringVar(&configFile, "c", "config.toml", "usage for config")
-	flag.Int64Var(&roomId, "r", 0, "usage for room id")
+	flag.Int64Var(&roomID, "r", 0, "usage for room id")
 	flag.Parse()
 
 	if _, err := toml.DecodeFile(configFile, &config); err != nil {
 		fmt.Printf("Error decoding config.toml: %s\n", err)
 	}
 
-	if roomId != 0 {
-		config.RoomId = roomId
+	if roomID != 0 {
+		config.RoomID = roomID
 	}
 
 	attrs := strings.Split(config.Cookie, ";")
@@ -52,7 +58,8 @@ func init() {
 func main() {
 	busChan := make(chan getter.DanmuMsg, 100)
 	roomInfoChan := make(chan getter.RoomInfo, 100)
-	getter.Run(config.RoomId, auth, busChan, roomInfoChan)
+	getter.Run(config.RoomID, auth, busChan, roomInfoChan)
 	sender.Run(auth)
-	ui.Run(config.RoomId, busChan, roomInfoChan)
+	// ui.Run(config.RoomID, busChan, roomInfoChan)
+	teaui.Run(busChan)
 }

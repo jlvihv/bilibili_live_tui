@@ -8,8 +8,10 @@ import (
 	"github.com/rivo/tview"
 )
 
-var submitHistory = []string{}
-var submitHistoryIndex = 0
+var (
+	submitHistory      = []string{}
+	submitHistoryIndex = 0
+)
 
 func setBoxAttr(box *tview.Box, title string) {
 	box.SetBorder(true)
@@ -49,7 +51,7 @@ func drawChat() (*tview.Grid, *tview.InputField, *tview.TextView) {
 	return chatGrid, input, messagesView
 }
 
-func draw(app *tview.Application, roomId int64, busChan chan getter.DanmuMsg, roomInfoChan chan getter.RoomInfo) *tview.Grid {
+func draw(app *tview.Application, roomID int64, busChan chan getter.DanmuMsg, roomInfoChan chan getter.RoomInfo) *tview.Grid {
 	slidebarGrid, roomInfoView, rankUsersView := drawSlidebar()
 	chatGrid, input, messagesView := drawChat()
 	rootGrid := tview.NewGrid().SetColumns(20, 0).SetBorders(false)
@@ -62,7 +64,7 @@ func draw(app *tview.Application, roomId int64, busChan chan getter.DanmuMsg, ro
 
 	input.SetDoneFunc(func(key tcell.Key) {
 		if key == tcell.KeyEnter {
-			go sender.SendMsg(roomId, input.GetText(), busChan)
+			go sender.SendMsg(roomID, input.GetText(), busChan)
 
 			submitHistory = append(submitHistory, input.GetText())
 			if len(submitHistory) > 10 {
@@ -77,9 +79,9 @@ func draw(app *tview.Application, roomId int64, busChan chan getter.DanmuMsg, ro
 	return rootGrid
 }
 
-func Run(roomId int64, busChan chan getter.DanmuMsg, roomInfoChan chan getter.RoomInfo) {
+func Run(roomID int64, busChan chan getter.DanmuMsg, roomInfoChan chan getter.RoomInfo) {
 	app := tview.NewApplication()
-	if err := app.SetRoot(draw(app, roomId, busChan, roomInfoChan), true).EnableMouse(false).Run(); err != nil {
+	if err := app.SetRoot(draw(app, roomID, busChan, roomInfoChan), true).EnableMouse(false).Run(); err != nil {
 		panic(err)
 	}
 }

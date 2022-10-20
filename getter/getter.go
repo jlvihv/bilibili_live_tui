@@ -26,7 +26,7 @@ type OnlineRankUser struct {
 }
 
 type RoomInfo struct {
-	RoomId          int
+	RoomID          int
 	Title           string
 	ParentAreaName  string
 	AreaName        string
@@ -54,7 +54,7 @@ type receivedInfo struct {
 	RealRoomID uint32                 `json:"real_roomid"`
 	MsgCommon  string                 `json:"msg_common"`
 	MsgSelf    string                 `json:"msg_self"`
-	LinkUrl    string                 `json:"link_url"`
+	LinkURL    string                 `json:"link_url"`
 	MsgType    string                 `json:"msg_type"`
 	ShieldUID  string                 `json:"shield_uid"`
 	BusinessID string                 `json:"business_id"`
@@ -72,7 +72,7 @@ type handShakeInfo struct {
 }
 
 func (d *DanmuClient) connect() {
-	var getDanmuInfo = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?id=%d&type=0"
+	getDanmuInfo := "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?id=%d&type=0"
 	r, err := requests.Get(fmt.Sprintf(getDanmuInfo, d.roomID))
 	if err != nil {
 		fmt.Println("request.Get DanmuInfo: ", err)
@@ -80,7 +80,7 @@ func (d *DanmuClient) connect() {
 	fmt.Println("获取弹幕服务器")
 	token := gjson.Get(r.Text(), "data.token").String()
 	hostList := []string{}
-	gjson.Get(r.Text(), "data.host_list").ForEach(func(key, value gjson.Result) bool {
+	gjson.Get(r.Text(), "data.host_list").ForEach(func(_, value gjson.Result) bool {
 		hostList = append(hostList, value.Get("host").String())
 		return true
 	})
@@ -113,7 +113,7 @@ func (d *DanmuClient) connect() {
 	if err != nil {
 		fmt.Println("Conn SendPackage: ", err)
 	}
-	fmt.Printf("连接房间[%d]成功\n", d.roomID)
+	fmt.Printf("连接房间 [%d] 成功\n", d.roomID)
 }
 
 func (d *DanmuClient) heartBeat() {
@@ -126,6 +126,7 @@ func (d *DanmuClient) heartBeat() {
 		time.Sleep(30 * time.Second)
 	}
 }
+
 func (d *DanmuClient) receiveRawMsg(busChan chan DanmuMsg) {
 	for {
 		_, rawMsg, _ := d.conn.ReadMessage()
@@ -171,15 +172,15 @@ func (d *DanmuClient) receiveRawMsg(busChan chan DanmuMsg) {
 
 func (d *DanmuClient) syncRoomInfo(roomInfoChan chan RoomInfo) {
 	for {
-		roomInfoApi := fmt.Sprintf("https://api.live.bilibili.com/room/v1/room/get_info?room_id=%d", d.roomID)
-		onlineRankApi := fmt.Sprintf("https://api.live.bilibili.com/xlive/general-interface/v1/rank/getOnlineGoldRank?ruid=%s&roomId=%d&page=1&pageSize=50", d.auth.DedeUserID, d.roomID)
+		roomInfoAPI := fmt.Sprintf("https://api.live.bilibili.com/room/v1/room/get_info?room_id=%d", d.roomID)
+		onlineRankAPI := fmt.Sprintf("https://api.live.bilibili.com/xlive/general-interface/v1/rank/getOnlineGoldRank?ruid=%s&roomId=%d&page=1&pageSize=50", d.auth.DedeUserID, d.roomID)
 
 		roomInfo := new(RoomInfo)
 		roomInfo.OnlineRankUsers = make([]OnlineRankUser, 0)
-		r1, err1 := requests.Get(roomInfoApi)
-		r2, err2 := requests.Get(onlineRankApi)
+		r1, err1 := requests.Get(roomInfoAPI)
+		r2, err2 := requests.Get(onlineRankAPI)
 		if err1 == nil {
-			roomInfo.RoomId = int(d.roomID)
+			roomInfo.RoomID = int(d.roomID)
 			roomInfo.Title = gjson.Get(r1.Text(), "data.title").String()
 			roomInfo.AreaName = gjson.Get(r1.Text(), "data.area_name").String()
 			roomInfo.ParentAreaName = gjson.Get(r1.Text(), "data.parent_area_name").String()
@@ -216,8 +217,8 @@ func (d *DanmuClient) syncRoomInfo(roomInfoChan chan RoomInfo) {
 }
 
 func (d *DanmuClient) getHistory(busChan chan DanmuMsg) {
-	historyApi := fmt.Sprintf("https://api.live.bilibili.com/xlive/web-room/v1/dM/gethistory?roomid=%d", d.roomID)
-	r, err := requests.Get(historyApi)
+	historyAPI := fmt.Sprintf("https://api.live.bilibili.com/xlive/web-room/v1/dM/gethistory?roomid=%d", d.roomID)
+	r, err := requests.Get(historyAPI)
 	if err != nil {
 		return
 	}

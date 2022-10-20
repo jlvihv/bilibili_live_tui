@@ -12,7 +12,7 @@ func roomInfoHandler(app *tview.Application, roomInfoView *tview.TextView, rankU
 	for roomInfo := range roomInfoChan {
 		roomInfoView.SetText(
 			roomInfo.Title + "\n" +
-				fmt.Sprintf("ID: %d", roomInfo.RoomId) + "\n" +
+				fmt.Sprintf("ID: %d", roomInfo.RoomID) + "\n" +
 				fmt.Sprintf("分区: %s/%s", roomInfo.ParentAreaName, roomInfo.AreaName) + "\n" +
 				fmt.Sprintf("👀: %d", roomInfo.Online) + "\n" +
 				fmt.Sprintf("❤️: %d", roomInfo.Attention) + "\n" +
@@ -38,8 +38,10 @@ func roomInfoHandler(app *tview.Application, roomInfoView *tview.TextView, rankU
 	}
 }
 
-var lastMsg = getter.DanmuMsg{}
-var lastLine = ""
+var (
+	lastMsg  = getter.DanmuMsg{}
+	lastLine = ""
+)
 
 func danmuHandler(app *tview.Application, messages *tview.TextView, busChan chan getter.DanmuMsg) {
 	for msg := range busChan {

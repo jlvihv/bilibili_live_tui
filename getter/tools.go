@@ -46,7 +46,7 @@ func (d *DanmuClient) sendPackage(packetlen uint32, magic uint16, ver uint16, ty
 	if packetlen == 0 {
 		packetlen = uint32(len(data) + 16)
 	}
-	var pdata = []interface{}{
+	pdata := []interface{}{
 		packetlen,
 		magic,
 		ver,
