@@ -1,12 +1,14 @@
 package getter
 
 import (
+	"bili/config"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/gorilla/websocket"
-	bg "github.com/iyear/biligo"
+	"github.com/iyear/biligo"
 
 	"github.com/asmcos/requests"
 	"github.com/tidwall/gjson"
@@ -14,7 +16,7 @@ import (
 
 type DanmuClient struct {
 	roomID        uint32
-	auth          bg.CookieAuth
+	auth          *biligo.CookieAuth
 	conn          *websocket.Conn
 	unzlibChannel chan []byte
 }
@@ -71,19 +73,39 @@ type handShakeInfo struct {
 	Key       string `json:"key"`
 }
 
-func (d *DanmuClient) connect() {
-	getDanmuInfo := "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?id=%d&type=0"
-	r, err := requests.Get(fmt.Sprintf(getDanmuInfo, d.roomID))
+func (d *DanmuClient) connect() error {
+	danmuURL := "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo?id=%d&type=0"
+	resp, err := requests.Get(fmt.Sprintf(danmuURL, d.roomID))
 	if err != nil {
-		fmt.Println("request.Get DanmuInfo: ", err)
+		fmt.Println("connect danmu server failed:", err)
+		return err
 	}
-	fmt.Println("获取弹幕服务器")
-	token := gjson.Get(r.Text(), "data.token").String()
+	token := gjson.Get(resp.Text(), "data.token").String()
 	hostList := []string{}
-	gjson.Get(r.Text(), "data.host_list").ForEach(func(_, value gjson.Result) bool {
+	gjson.Get(resp.Text(), "data.host_list").ForEach(func(_, value gjson.Result) bool {
 		hostList = append(hostList, value.Get("host").String())
 		return true
 	})
+
+	if len(hostList) == 0 {
+		fmt.Println("no host available")
+		return fmt.Errorf("no host available")
+	}
+
+	for _, host := range hostList {
+		d.conn, _, err = websocket.DefaultDialer.Dial(fmt.Sprintf("wss://%s:443/sub", host), nil)
+		if err != nil {
+			fmt.Printf("websocket.Dial failed for %s: %s\n", host, err)
+			continue
+		}
+		// fmt.Printf("连接弹幕服务器[%s]成功\n", host)
+		break
+	}
+	if err != nil {
+		fmt.Println("dial websocket danmu server all failed:", err)
+		return err
+	}
+
 	hsInfo := handShakeInfo{
 		UID:       0,
 		Roomid:    d.roomID,
@@ -93,34 +115,25 @@ func (d *DanmuClient) connect() {
 		Type:      2,
 		Key:       token,
 	}
-	for _, h := range hostList {
-		d.conn, _, err = websocket.DefaultDialer.Dial(fmt.Sprintf("wss://%s:443/sub", h), nil)
-		if err != nil {
-			fmt.Println("websocket.Dial: ", err)
-			continue
-		}
-		fmt.Printf("连接弹幕服务器[%s]成功\n", hostList[0])
-		break
-	}
+	b, err := json.Marshal(hsInfo)
 	if err != nil {
-		fmt.Println("websocket.Dial Error")
+		fmt.Println("json marshar handShakeInfo error:", err)
+		return err
 	}
-	jm, err := json.Marshal(hsInfo)
+	err = d.sendPackage(0, 16, 1, 7, 1, b)
 	if err != nil {
-		fmt.Println("json.Marshal: ", err)
+		fmt.Println("conn sendPackage error:", err)
+		return err
 	}
-	err = d.sendPackage(0, 16, 1, 7, 1, jm)
-	if err != nil {
-		fmt.Println("Conn SendPackage: ", err)
-	}
-	fmt.Printf("连接房间 [%d] 成功\n", d.roomID)
+	// fmt.Printf("连接房间 [%d] 成功\n", d.roomID)
+	return nil
 }
 
 func (d *DanmuClient) heartBeat() {
 	for {
 		obj := []byte("5b6f626a656374204f626a6563745d")
 		if err := d.sendPackage(0, 16, 1, 2, 1, obj); err != nil {
-			fmt.Println("heart beat err: ", err)
+			fmt.Println("heart beat err:", err)
 			continue
 		}
 		time.Sleep(30 * time.Second)
@@ -130,42 +143,46 @@ func (d *DanmuClient) heartBeat() {
 func (d *DanmuClient) receiveRawMsg(busChan chan DanmuMsg) {
 	for {
 		_, rawMsg, _ := d.conn.ReadMessage()
-		if rawMsg[7] == 2 {
-			msgs := splitMsg(zlibUnCompress(rawMsg[16:]))
-			for _, msg := range msgs {
-				uz := msg[16:]
-				js := new(receivedInfo)
-				json.Unmarshal(uz, js)
-				m := DanmuMsg{}
-				switch js.Cmd {
-				case "COMBO_SEND":
-					m.Author = js.Data["uname"].(string)
-					m.Content = fmt.Sprintf("送给 %s %d 个 %s", js.Data["r_uname"].(string), int(js.Data["combo_num"].(float64)), js.Data["gift_name"].(string))
-				case "DANMU_MSG":
-					m.Author = js.Info[2].([]interface{})[1].(string)
-					m.Content = js.Info[1].(string)
-				case "GUARD_BUY":
-					m.Author = js.Data["username"].(string)
-					m.Content = fmt.Sprintf("购买了 %s", js.Data["giftName"].(string))
-				case "INTERACT_WORD":
-					m.Author = js.Data["uname"].(string)
-					m.Content = "进入了房间"
-				case "SEND_GIFT":
-					m.Author = js.Data["uname"].(string)
-					m.Content = fmt.Sprintf("投喂了 %d 个 %s", int(js.Data["num"].(float64)), js.Data["giftName"].(string))
-				case "USER_TOAST_MSG":
-					m.Author = "system"
-					m.Content = js.Data["toast_msg"].(string)
-				case "NOTICE_MSG":
-					m.Author = "system"
-					m.Content = js.MsgSelf
-				default: // "LIVE" "ACTIVITY_BANNER_UPDATE_V2" "ONLINE_RANK_COUNT" "ONLINE_RANK_TOP3" "ONLINE_RANK_V2" "PANEL" "PREPARING" "WIDGET_BANNER" "LIVE_INTERACTIVE_GAME"
-					continue
-				}
-				m.Type = js.Cmd
-				m.Time = time.Now()
-				busChan <- m
+		if rawMsg[7] != 2 {
+			continue
+		}
+		msgs := splitMsg(zlibUnCompress(rawMsg[16:]))
+		for _, msg := range msgs {
+			received := new(receivedInfo)
+			err := json.Unmarshal(msg[16:], received)
+			if err != nil {
+				fmt.Println("json Unmarshal receivedInfo error:", err)
+				continue
 			}
+			m := DanmuMsg{}
+			switch received.Cmd {
+			case "COMBO_SEND":
+				m.Author = received.Data["uname"].(string)
+				m.Content = fmt.Sprintf("送给 %s %d 个 %s", received.Data["r_uname"].(string), int(received.Data["combo_num"].(float64)), received.Data["gift_name"].(string))
+			case "DANMU_MSG":
+				m.Author = received.Info[2].([]interface{})[1].(string)
+				m.Content = received.Info[1].(string)
+			case "GUARD_BUY":
+				m.Author = received.Data["username"].(string)
+				m.Content = fmt.Sprintf("购买了 %s", received.Data["giftName"].(string))
+			case "INTERACT_WORD":
+				m.Author = received.Data["uname"].(string)
+				m.Content = "进入了房间"
+			case "SEND_GIFT":
+				m.Author = received.Data["uname"].(string)
+				m.Content = fmt.Sprintf("投喂了 %d 个 %s", int(received.Data["num"].(float64)), received.Data["giftName"].(string))
+			case "USER_TOAST_MSG":
+				m.Author = "system"
+				m.Content = received.Data["toast_msg"].(string)
+			case "NOTICE_MSG":
+				m.Author = "system"
+				m.Content = received.MsgSelf
+			default: // "LIVE" "ACTIVITY_BANNER_UPDATE_V2" "ONLINE_RANK_COUNT" "ONLINE_RANK_TOP3" "ONLINE_RANK_V2" "PANEL" "PREPARING" "WIDGET_BANNER" "LIVE_INTERACTIVE_GAME"
+				continue
+			}
+			m.Type = received.Cmd
+			m.Time = time.Now()
+			busChan <- m
 		}
 	}
 }
@@ -176,17 +193,16 @@ func (d *DanmuClient) syncRoomInfo(roomInfoChan chan RoomInfo) {
 		onlineRankAPI := fmt.Sprintf("https://api.live.bilibili.com/xlive/general-interface/v1/rank/getOnlineGoldRank?ruid=%s&roomId=%d&page=1&pageSize=50", d.auth.DedeUserID, d.roomID)
 
 		roomInfo := new(RoomInfo)
-		roomInfo.OnlineRankUsers = make([]OnlineRankUser, 0)
-		r1, err1 := requests.Get(roomInfoAPI)
-		r2, err2 := requests.Get(onlineRankAPI)
-		if err1 == nil {
+		roomInfo.OnlineRankUsers = make([]OnlineRankUser, 16)
+		roomResp, err := requests.Get(roomInfoAPI)
+		if err == nil {
 			roomInfo.RoomID = int(d.roomID)
-			roomInfo.Title = gjson.Get(r1.Text(), "data.title").String()
-			roomInfo.AreaName = gjson.Get(r1.Text(), "data.area_name").String()
-			roomInfo.ParentAreaName = gjson.Get(r1.Text(), "data.parent_area_name").String()
-			roomInfo.Online = gjson.Get(r1.Text(), "data.online").Int()
-			roomInfo.Attention = gjson.Get(r1.Text(), "data.attention").Int()
-			_time, _ := time.Parse("2006-01-02 15:04:05", gjson.Get(r1.Text(), "data.live_time").String())
+			roomInfo.Title = gjson.Get(roomResp.Text(), "data.title").String()
+			roomInfo.AreaName = gjson.Get(roomResp.Text(), "data.area_name").String()
+			roomInfo.ParentAreaName = gjson.Get(roomResp.Text(), "data.parent_area_name").String()
+			roomInfo.Online = gjson.Get(roomResp.Text(), "data.online").Int()
+			roomInfo.Attention = gjson.Get(roomResp.Text(), "data.attention").Int()
+			_time, _ := time.Parse("2006-01-02 15:04:05", gjson.Get(roomResp.Text(), "data.live_time").String())
 			seconds := time.Now().Unix() - _time.Unix() + 8*60*60
 			days := seconds / 86400
 			hours := (seconds % 86400) / 3600
@@ -199,8 +215,10 @@ func (d *DanmuClient) syncRoomInfo(roomInfoChan chan RoomInfo) {
 				roomInfo.Time = fmt.Sprintf("%d分", minutes)
 			}
 		}
-		if err2 == nil {
-			rawUsers := gjson.Get(r2.Text(), "data.OnlineRankItem").Array()
+
+		onlineResp, err := requests.Get(onlineRankAPI)
+		if err == nil {
+			rawUsers := gjson.Get(onlineResp.Text(), "data.OnlineRankItem").Array()
 			for _, rawUser := range rawUsers {
 				user := OnlineRankUser{
 					Name:  rawUser.Get("name").String(),
@@ -236,16 +254,20 @@ func (d *DanmuClient) getHistory(busChan chan DanmuMsg) {
 	}
 }
 
-func Run(roomID int64, auth bg.CookieAuth, busChan chan DanmuMsg, roomInfoChan chan RoomInfo) {
-	dc := DanmuClient{
-		roomID:        uint32(roomID),
-		auth:          auth,
+func Run(msgChan chan DanmuMsg, roomInfoChan chan RoomInfo) {
+	danmuClient := DanmuClient{
+		roomID:        config.Get().RoomIDs[0],
+		auth:          config.CookieAuth(),
 		conn:          new(websocket.Conn),
 		unzlibChannel: make(chan []byte, 100),
 	}
-	dc.connect()
-	go dc.heartBeat()
-	go dc.receiveRawMsg(busChan)
-	go dc.syncRoomInfo(roomInfoChan)
-	go dc.getHistory(busChan)
+	err := danmuClient.connect()
+	if err != nil {
+		fmt.Println("can not connect danmu server:", err)
+		os.Exit(1)
+	}
+	go danmuClient.heartBeat()
+	go danmuClient.receiveRawMsg(msgChan)
+	go danmuClient.getHistory(msgChan)
+	go danmuClient.syncRoomInfo(roomInfoChan)
 }
