@@ -17,41 +17,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-var msgCh chan getter.DanmuMsg
-
-func Run(msgChan chan getter.DanmuMsg, roomChan chan getter.RoomInfo) {
-	msgCh = msgChan
-	p := tea.NewProgram(initialModel())
-	go getMsg(p, msgCh)
-	go getRoomInfo(p, roomChan)
-	if _, err := p.StartReturningModel(); err != nil {
-		log.Fatal(err)
-	}
+type manager struct {
+	msgChan  chan getter.DanmuMsg
+	roomChan chan getter.RoomInfo
 }
 
-func getMsg(p *tea.Program, msgChan chan getter.DanmuMsg) tea.Msg {
-	for {
-		msg := <-msgChan
-		p.Send(tea.Msg(msg))
-	}
-}
-
-func getRoomInfo(p *tea.Program, roomChan chan getter.RoomInfo) tea.Msg {
-	for {
-		room := <-roomChan
-		p.Send(tea.Msg(room))
-	}
-}
-
-func sendMsg(msg string) {
-	go sender.SendMsg(config.Get().RoomIDs[0], msg, msgCh)
-}
-
-type (
-	errMsg error
-)
-
-type model struct {
+type view struct {
 	roomArea    viewport.Model
 	chatArea    viewport.Model
 	inputArea   textarea.Model
@@ -60,7 +31,50 @@ type model struct {
 	err         error
 }
 
-func initialModel() model {
+type (
+	errMsg error
+)
+
+var rootManager *manager
+
+func NewManager(msgChan chan getter.DanmuMsg, roomChan chan getter.RoomInfo) *manager {
+	rootManager = &manager{
+		msgChan:  msgChan,
+		roomChan: roomChan,
+	}
+	return rootManager
+}
+
+func (m *manager) Run() {
+	view := initialModel()
+	p := tea.NewProgram(view)
+	go m.getMsg(p)
+	go m.getRoomInfo(p)
+
+	if _, err := p.StartReturningModel(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func (m *manager) getMsg(p *tea.Program) tea.Msg {
+	for {
+		msg := <-m.msgChan
+		p.Send(tea.Msg(msg))
+	}
+}
+
+func (m *manager) getRoomInfo(p *tea.Program) tea.Msg {
+	for {
+		room := <-m.roomChan
+		p.Send(tea.Msg(room))
+	}
+}
+
+func (m *manager) sendMsg(msg string) {
+	go sender.SendMsg(config.Get().RoomIDs[0], msg, m.msgChan)
+}
+
+func initialModel() tea.Model {
 	roomArea := viewport.New(80, 6)
 	roomArea.SetContent(`正在载入房间信息～`)
 
@@ -82,58 +96,64 @@ func initialModel() model {
 	inputArea.ShowLineNumbers = false
 
 	inputArea.KeyMap.InsertNewline.SetEnabled(false)
-
-	return model{
+	return view{
 		roomArea:    roomArea,
 		chatArea:    chatArea,
 		inputArea:   inputArea,
-		messages:    []string{},
-		senderStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("5")),
-		err:         nil,
+		senderStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("#FF69B4")),
 	}
 }
 
-func (m model) Init() tea.Cmd {
-	return textarea.Blink
+func (v view) Init() tea.Cmd {
+	return tea.Batch(textarea.Blink, tea.EnterAltScreen)
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (v view) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var (
 		roomCmd  tea.Cmd
 		chatCmd  tea.Cmd
 		inputCmd tea.Cmd
 	)
 
-	m.roomArea, roomCmd = m.roomArea.Update(msg)
-	m.chatArea, chatCmd = m.chatArea.Update(msg)
-	m.inputArea, inputCmd = m.inputArea.Update(msg)
+	v.roomArea, roomCmd = v.roomArea.Update(msg)
+	v.chatArea, chatCmd = v.chatArea.Update(msg)
+	v.inputArea, inputCmd = v.inputArea.Update(msg)
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
-			fmt.Println(m.inputArea.Value())
-			return m, tea.Quit
+			fmt.Println(v.inputArea.Value())
+			return v, tea.Quit
 		case tea.KeyEnter:
-			sendMsg(m.inputArea.Value())
+			rootManager.sendMsg(v.inputArea.Value())
 			// 发送消息之后，输入框清空
-			m.inputArea.Reset()
-			m.chatArea.GotoBottom()
+			v.inputArea.Reset()
+			v.chatArea.GotoBottom()
 		}
 	case getter.DanmuMsg:
-		m.messages = append(m.messages, m.senderStyle.Render(fmt.Sprintf("%s: ", msg.Author))+msg.Content)
-		m.chatArea.SetContent(strings.Join(m.messages, "\n"))
-		m.chatArea.GotoBottom()
+		v.messages = append(v.messages, v.senderStyle.Render(fmt.Sprintf("%s: ", msg.Author))+msg.Content)
+		v.chatArea.SetContent(strings.Join(v.messages, "\n"))
+		v.chatArea.GotoBottom()
 	case getter.RoomInfo:
-		m.roomArea.SetContent(formatRoomInfo(&msg))
+		v.roomArea.SetContent(formatRoomInfo(&msg))
 
 	// We handle errors just like any other message
 	case errMsg:
-		m.err = msg
-		return m, nil
+		v.err = msg
+		return v, nil
 	}
 
-	return m, tea.Batch(roomCmd, chatCmd, inputCmd)
+	return v, tea.Batch(roomCmd, chatCmd, inputCmd)
+}
+
+func (v view) View() string {
+	return fmt.Sprintf(
+		"%s\n\n%s\n\n%s",
+		v.roomArea.View(),
+		v.chatArea.View(),
+		v.inputArea.View(),
+	) + "\n\n"
 }
 
 func formatRoomInfo(r *getter.RoomInfo) string {
@@ -143,13 +163,4 @@ func formatRoomInfo(r *getter.RoomInfo) string {
 		fmt.Sprintf("👀: %d", r.Online) + "\n" +
 		fmt.Sprintf("❤️: %d", r.Attention) + "\n" +
 		fmt.Sprintf("🕒: %s", r.Time) + "\n"
-}
-
-func (m model) View() string {
-	return fmt.Sprintf(
-		"%s\n\n%s\n\n%s",
-		m.roomArea.View(),
-		m.chatArea.View(),
-		m.inputArea.View(),
-	) + "\n\n"
 }

@@ -98,7 +98,7 @@ func (d *DanmuClient) connect() error {
 			fmt.Printf("websocket.Dial failed for %s: %s\n", host, err)
 			continue
 		}
-		// fmt.Printf("连接弹幕服务器[%s]成功\n", host)
+		fmt.Printf("连接弹幕服务器[%s]成功\n", host)
 		break
 	}
 	if err != nil {
@@ -158,7 +158,12 @@ func (d *DanmuClient) receiveRawMsg(busChan chan DanmuMsg) {
 			switch received.Cmd {
 			case "COMBO_SEND":
 				m.Author = received.Data["uname"].(string)
-				m.Content = fmt.Sprintf("送给 %s %d 个 %s", received.Data["r_uname"].(string), int(received.Data["combo_num"].(float64)), received.Data["gift_name"].(string))
+				m.Content = fmt.Sprintf(
+					"送给 %s %d 个 %s",
+					received.Data["r_uname"].(string),
+					int(received.Data["combo_num"].(float64)),
+					received.Data["gift_name"].(string),
+				)
 			case "DANMU_MSG":
 				m.Author = received.Info[2].([]interface{})[1].(string)
 				m.Content = received.Info[1].(string)
@@ -170,7 +175,11 @@ func (d *DanmuClient) receiveRawMsg(busChan chan DanmuMsg) {
 				m.Content = "进入了房间"
 			case "SEND_GIFT":
 				m.Author = received.Data["uname"].(string)
-				m.Content = fmt.Sprintf("投喂了 %d 个 %s", int(received.Data["num"].(float64)), received.Data["giftName"].(string))
+				m.Content = fmt.Sprintf(
+					"投喂了 %d 个 %s",
+					int(received.Data["num"].(float64)),
+					received.Data["giftName"].(string),
+				)
 			case "USER_TOAST_MSG":
 				m.Author = "system"
 				m.Content = received.Data["toast_msg"].(string)
@@ -189,8 +198,15 @@ func (d *DanmuClient) receiveRawMsg(busChan chan DanmuMsg) {
 
 func (d *DanmuClient) syncRoomInfo(roomInfoChan chan RoomInfo) {
 	for {
-		roomInfoAPI := fmt.Sprintf("https://api.live.bilibili.com/room/v1/room/get_info?room_id=%d", d.roomID)
-		onlineRankAPI := fmt.Sprintf("https://api.live.bilibili.com/xlive/general-interface/v1/rank/getOnlineGoldRank?ruid=%s&roomId=%d&page=1&pageSize=50", d.auth.DedeUserID, d.roomID)
+		roomInfoAPI := fmt.Sprintf(
+			"https://api.live.bilibili.com/room/v1/room/get_info?room_id=%d",
+			d.roomID,
+		)
+		onlineRankAPI := fmt.Sprintf(
+			"https://api.live.bilibili.com/xlive/general-interface/v1/rank/getOnlineGoldRank?ruid=%s&roomId=%d&page=1&pageSize=50",
+			d.auth.DedeUserID,
+			d.roomID,
+		)
 
 		roomInfo := new(RoomInfo)
 		roomInfo.OnlineRankUsers = make([]OnlineRankUser, 16)
@@ -202,7 +218,10 @@ func (d *DanmuClient) syncRoomInfo(roomInfoChan chan RoomInfo) {
 			roomInfo.ParentAreaName = gjson.Get(roomResp.Text(), "data.parent_area_name").String()
 			roomInfo.Online = gjson.Get(roomResp.Text(), "data.online").Int()
 			roomInfo.Attention = gjson.Get(roomResp.Text(), "data.attention").Int()
-			_time, _ := time.Parse("2006-01-02 15:04:05", gjson.Get(roomResp.Text(), "data.live_time").String())
+			_time, _ := time.Parse(
+				"2006-01-02 15:04:05",
+				gjson.Get(roomResp.Text(), "data.live_time").String(),
+			)
 			seconds := time.Now().Unix() - _time.Unix() + 8*60*60
 			days := seconds / 86400
 			hours := (seconds % 86400) / 3600
@@ -235,7 +254,10 @@ func (d *DanmuClient) syncRoomInfo(roomInfoChan chan RoomInfo) {
 }
 
 func (d *DanmuClient) getHistory(busChan chan DanmuMsg) {
-	historyAPI := fmt.Sprintf("https://api.live.bilibili.com/xlive/web-room/v1/dM/gethistory?roomid=%d", d.roomID)
+	historyAPI := fmt.Sprintf(
+		"https://api.live.bilibili.com/xlive/web-room/v1/dM/gethistory?roomid=%d",
+		d.roomID,
+	)
 	r, err := requests.Get(historyAPI)
 	if err != nil {
 		return
@@ -257,7 +279,7 @@ func (d *DanmuClient) getHistory(busChan chan DanmuMsg) {
 func Run(msgChan chan DanmuMsg, roomInfoChan chan RoomInfo) {
 	danmuClient := DanmuClient{
 		roomID:        config.Get().RoomIDs[0],
-		auth:          config.CookieAuth(),
+		auth:          &config.Get().Cookie,
 		conn:          new(websocket.Conn),
 		unzlibChannel: make(chan []byte, 100),
 	}

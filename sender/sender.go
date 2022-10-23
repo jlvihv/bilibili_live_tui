@@ -28,7 +28,14 @@ func SendMsg(roomID uint32, msg string, msgChan chan getter.DanmuMsg) {
 	var err error
 	for i := 0; i < len(msgRune); i += 20 {
 		if i+20 < len(msgRune) {
-			err = biliClient.LiveSendDanmaku(int64(roomID), 16777215, 25, 1, string(msgRune[i:i+20]), 0)
+			err = biliClient.LiveSendDanmaku(
+				int64(roomID),
+				16777215,
+				25,
+				1,
+				string(msgRune[i:i+20]),
+				0,
+			)
 			time.Sleep(time.Second)
 		} else {
 			err = biliClient.LiveSendDanmaku(int64(roomID), 16777215, 25, 1, string(msgRune[i:]), 0)
@@ -41,7 +48,7 @@ func SendMsg(roomID uint32, msg string, msgChan chan getter.DanmuMsg) {
 
 func Run() {
 	biliCli, err := biligo.NewBiliClient(&biligo.BiliSetting{
-		Auth:      config.CookieAuth(),
+		Auth:      &config.Get().Cookie,
 		DebugMode: false,
 	})
 	biliClient = biliCli

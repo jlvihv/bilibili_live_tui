@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/iyear/biligo"
 	"github.com/mitchellh/go-homedir"
@@ -18,12 +17,11 @@ const (
 var (
 	configFilePath string
 	conf           *Config
-	auth           *biligo.CookieAuth
 )
 
 type Config struct {
-	RoomIDs []uint32 `toml:"room_ids"`
-	Cookie  string   `toml:"cookie"`
+	RoomIDs []uint32          `toml:"room_ids"`
+	Cookie  biligo.CookieAuth `toml:"cookie"`
 }
 
 func FilePath() string {
@@ -72,7 +70,11 @@ func Get() *Config {
 	}
 	conf = &Config{}
 	if !IsFileExist() {
-		Create()
+		err := Create()
+		if err != nil {
+			fmt.Println("create config file failed:", err)
+			return conf
+		}
 		return conf
 	}
 	b, err := os.ReadFile(FullPath())
@@ -88,26 +90,28 @@ func Get() *Config {
 	return conf
 }
 
-func CookieAuth() *biligo.CookieAuth {
-	if auth != nil {
-		return auth
+func SetCookieAuth(cookieAuth *biligo.CookieAuth) {
+	fmt.Println("cookie auth:", cookieAuth)
+	conf.Cookie = *cookieAuth
+	b, err := toml.Marshal(conf)
+	if err != nil {
+		panic(err)
 	}
-	conf := Get()
-	if conf.Cookie == "" {
-		return nil
+	err = os.WriteFile(FullPath(), b, 0644)
+	if err != nil {
+		panic(err)
 	}
-	attrs := strings.Split(conf.Cookie, ";")
-	kvs := make(map[string]string)
-	for _, attr := range attrs {
-		kv := strings.Split(attr, "=")
-		k := strings.Trim(kv[0], " ")
-		v := strings.Trim(kv[1], " ")
-		kvs[k] = v
+	fmt.Println("保存配置文件成功")
+}
+
+func SetRoomID(roomID int) {
+	conf.RoomIDs = []uint32{uint32(roomID)}
+	b, err := toml.Marshal(conf)
+	if err != nil {
+		panic(err)
 	}
-	auth = &biligo.CookieAuth{}
-	auth.SESSDATA = kvs["SESSDATA"]
-	auth.DedeUserID = kvs["DedeUserID"]
-	auth.DedeUserIDCkMd5 = kvs["DedeUserID__ckMd5"]
-	auth.BiliJCT = kvs["bili_jct"]
-	return auth
+	err = os.WriteFile(FullPath(), b, 0644)
+	if err != nil {
+		panic(err)
+	}
 }
