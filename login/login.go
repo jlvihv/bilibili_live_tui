@@ -36,7 +36,6 @@ func GetCookieAuth(qrcodeKey string) (*biligo.CookieAuth, error) {
 		}
 		if statusCode == 0 {
 			fmt.Println("登陆成功")
-			fmt.Println("this cookie auth:", cookieAuth)
 			return cookieAuth, nil
 		}
 		time.Sleep(1 * time.Second)

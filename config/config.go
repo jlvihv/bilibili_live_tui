@@ -91,7 +91,6 @@ func Get() *Config {
 }
 
 func SetCookieAuth(cookieAuth *biligo.CookieAuth) {
-	fmt.Println("cookie auth:", cookieAuth)
 	conf.Cookie = *cookieAuth
 	b, err := toml.Marshal(conf)
 	if err != nil {

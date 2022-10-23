@@ -44,7 +44,7 @@ func check_login() {
 
 func check_room() {
 	if len(config.Get().RoomIDs) == 0 {
-		fmt.Print("请设置房间号：")
+		fmt.Print("想进入哪个直播间呢：")
 		var roomID int
 		fmt.Scan(&roomID)
 		config.SetRoomID(roomID)
